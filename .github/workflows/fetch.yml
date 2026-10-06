@@ -16,5 +16,6 @@ jobs:
           cp "$(find package/dist -name zxing_reader.wasm | head -1)" zx/zxing_reader.wasm
           ls -la zx
           rm -rf package *.tgz
+          npm pack exceljs@4.4.0 && tar xzf exceljs-4.4.0.tgz && mkdir -p lib && cp package/dist/exceljs.min.js lib/exceljs.min.js && ls -la lib && rm -rf package *.tgz
           git config user.name github-actions; git config user.email actions@github.com
-          git add zx && git commit -m "zxing files [built]" && git push
+          git add zx lib && git commit -m "zxing files [built]" && git push

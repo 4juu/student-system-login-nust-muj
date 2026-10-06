@@ -53,7 +53,13 @@ ol li span{font-family:var(--f-mono);color:var(--mute);min-width:2ch;font-varian
 #zoomB{font:inherit;font-weight:700;font-size:18px;background:#fff3;color:#fff;border:2px solid #fff;border-radius:14px;padding:12px 18px;min-width:76px}
 #camBot{gap:14px}
 #camView video{transform-origin:50% 50%;transition:transform .2s}
-#camDone{font:inherit;font-weight:700;font-size:19px;background:var(--accent);color:var(--accent-fg);border:0;border-radius:14px;padding:14px 40px}
+#shutter{width:80px;height:80px;border-radius:50%;border:6px solid #fff;background:#fff4;flex:none}
+#shutter:active{background:#fffb;transform:scale(.93)}
+#camView.live #shutter{display:none}
+#camView:not(.live) .dot{display:none}
+#aim{position:absolute;left:50%;top:50%;width:56vmin;height:56vmin;transform:translate(-50%,-50%);border:3px solid #2ecc71cc;border-radius:18px;pointer-events:none}
+#camView:not(.live) #aim{display:none}
+#camDone{font:inherit;font-weight:700;font-size:19px;background:var(--accent);color:var(--accent-fg);border:0;border-radius:14px;padding:14px 22px}
 #camHint{position:absolute;top:50%;inset-inline:0;text-align:center;font-size:16px;opacity:.75;transform:translateY(-50%);pointer-events:none}
 #camNew{position:absolute;bottom:110px;inset-inline:12px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
 #camNew div{background:#1a7f37e6;color:#fff;border-radius:10px;padding:6px 12px;font-size:16px;animation:pop 2.2s forwards}
@@ -61,7 +67,7 @@ ol li span{font-family:var(--f-mono);color:var(--mute);min-width:2ch;font-varian
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2ecc71;margin-inline-end:6px;animation:bl 1s infinite}
 @keyframes bl{50%{opacity:.25}}
 #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
-#flash{background:#2ecc71}
+#flash.g{background:#2ecc71}
 #flash.on{opacity:.35;transition:none}
 </style>
 
@@ -82,7 +88,8 @@ ol li span{font-family:var(--f-mono);color:var(--mute);min-width:2ch;font-varian
 
 <div class="wrap" id="lec" hidden>
   <button class="link back" data-go="home">→ رجوع</button>
-  <button class="btn p big" id="camGo">📷 افتح الكاميرا</button>
+  <button class="btn p big" id="camGo">📸 صوّر</button>
+  <button class="btn big" id="liveGo">⚡ مسح مباشر</button>
   <p class="mute" id="camMsg" hidden></p>
   <label class="btn" id="snapAlt" hidden>📷 صوّر صورة<input id="snapIn" type="file" accept="image/*" capture="environment" hidden></label>
   <p class="mute" id="pending"></p>
@@ -96,10 +103,11 @@ ol li span{font-family:var(--f-mono);color:var(--mute);min-width:2ch;font-varian
 <div id="camView" hidden>
   <video id="vid" playsinline muted autoplay></video>
   <div id="flash"></div>
-  <div id="camTop"><span>حاضر <b id="cOk">0</b> / <span id="cAll"></span></span><span id="cQ"><i class="dot"></i>يقرا</span></div>
-  <div id="camHint">وجّه الكاميرا على رموز الطلاب</div>
+  <div id="aim"></div>
+  <div id="camTop"><span>حاضر <b id="cOk">0</b> / <span id="cAll"></span></span><span id="cQ"></span></div>
+  <div id="camHint"></div>
   <div id="camNew"></div>
-  <div id="camBot"><button id="zoomB" dir="ltr">🔍 1×</button><button id="camDone">إنهاء</button></div>
+  <div id="camBot"><button id="zoomB" dir="ltr">🔍 1×</button><button id="shutter" aria-label="صوّر"></button><button id="camDone">إنهاء</button></div>
 </div>
 
 <div id="stuScreen" hidden>
@@ -183,6 +191,25 @@ async function scanMany(cv,mk,budget,yieldRows,kmax){
   return found;
 }
 
+/* fast pass for live video: jsQR on a few given rectangles only */
+function scanRects(cv,mk,rects){
+  const found=[],c=cv.getContext('2d',{willReadFrequently:true});
+  const tmp=mk(),tc=tmp.getContext('2d',{willReadFrequently:true});
+  for(const [x,y,w,h] of rects){
+    const sc=Math.min(1,480/Math.max(w,h)),tw=Math.max(1,Math.round(w*sc)),th=Math.max(1,Math.round(h*sc));
+    tmp.width=tw;tmp.height=th;
+    for(let tries=0;tries<3;tries++){
+      tc.drawImage(cv,x,y,w,h,0,0,tw,th);
+      const r=jsQR(tc.getImageData(0,0,tw,th).data,tw,th,{inversionAttempts:'dontInvert'});
+      if(!r||!r.data)break;
+      if(!found.includes(r.data))found.push(r.data);
+      const L=r.location,pts=[L.topLeftCorner,L.topRightCorner,L.bottomRightCorner,L.bottomLeftCorner].map(p=>({x:x+p.x/sc,y:y+p.y/sc}));
+      const cx=pts.reduce((a,p)=>a+p.x,0)/4,cy=pts.reduce((a,p)=>a+p.y,0)/4;
+      c.fillStyle='#fff';c.beginPath();pts.forEach((p,i)=>{const px=cx+(p.x-cx)*1.4,py=cy+(p.y-cy)*1.4;i?c.lineTo(px,py):c.moveTo(px,py)});c.closePath();c.fill();
+    }
+  }
+  return found;
+}
 let native=null,workers=[],mode='page';
 const nativeReady=(async()=>{if('BarcodeDetector' in window){try{const f=await BarcodeDetector.getSupportedFormats();if(f.includes('qr_code'))native=new BarcodeDetector({formats:['qr_code']})}catch(e){}}})();
 /* try to build a small pool of background workers so photos are read in parallel without freezing the camera */
@@ -190,9 +217,9 @@ const workersReady=(async()=>{
   try{
     if(typeof OffscreenCanvas==='undefined'||typeof Worker==='undefined')return;
     const lib=await (await fetch($('jsqrTag').src)).text();
-    const src=lib+'\n'+scanMany.toString()+'\n'+
-      'onmessage=async e=>{const {id,bmp,ms,km}=e.data;try{const cv=new OffscreenCanvas(bmp.width,bmp.height);cv.getContext("2d",{willReadFrequently:true}).drawImage(bmp,0,0);bmp.close&&bmp.close();'+
-      'const r=await scanMany(cv,()=>new OffscreenCanvas(1,1),ms||12000,false,km);postMessage({id,r})}catch(err){postMessage({id,err:String(err)})}};postMessage({ready:1})';
+    const src=lib+'\n'+scanMany.toString()+'\n'+scanRects.toString()+'\n'+
+      'onmessage=async e=>{const {id,bmp,ms,km,rects}=e.data;try{const cv=new OffscreenCanvas(bmp.width,bmp.height);cv.getContext("2d",{willReadFrequently:true}).drawImage(bmp,0,0);bmp.close&&bmp.close();'+
+      'const r=rects?scanRects(cv,()=>new OffscreenCanvas(1,1),rects):await scanMany(cv,()=>new OffscreenCanvas(1,1),ms||12000,false,km);postMessage({id,r})}catch(err){postMessage({id,err:String(err)})}};postMessage({ready:1})';
     const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
     const n=Math.max(1,Math.min(3,(navigator.hardwareConcurrency||2)-1));
     const made=await Promise.all(Array.from({length:n},()=>new Promise(res=>{
@@ -203,8 +230,8 @@ const workersReady=(async()=>{
   }catch(e){workers=[]}
 })();
 let wid=0;
-function workerScan(slot,bmp,ms,km){
-  return new Promise((res,rej)=>{const id=++wid;slot.w.onmessage=e=>{if(e.data.id!==id)return;e.data.err?rej(e.data.err):res(e.data.r)};slot.w.postMessage({id,bmp,ms,km},[bmp])});
+function workerScan(slot,bmp,ms,km,rects){
+  return new Promise((res,rej)=>{const id=++wid;slot.w.onmessage=e=>{if(e.data.id!==id)return;e.data.err?rej(e.data.err):res(e.data.r)};slot.w.postMessage({id,bmp,ms,km,rects},[bmp])});
 }
 
 async function toBitmap(blob){
@@ -231,18 +258,18 @@ function validate(text,lecT){
 }
 
 /* ---------- background queue ---------- */
-const present=new Set(),rejected={};let queue=[],running=0,shots=0,doneShots=0;
+const present=new Set(),rejected={};let queue=[],running=0,shots=0,doneShots=0,camMode='';
 function addShot(blob,lecT){shots++;queue.push({blob,lecT});pump();render()}
 async function pump(){
   await Promise.all([nativeReady,workersReady]);
   const limit=mode==='workers'?workers.length:1;
   while(running<limit&&queue.length){
     const job=queue.shift();running++;
-    runJob(job).catch(()=>{}).finally(()=>{running--;doneShots++;render();pump()});
+    runJob(job).then(()=>{job.blob=null}).catch(()=>{}).finally(()=>{running--;doneShots++;render();pump()});
   }
 }
-async function runJob({blob,lecT}){
-  const cv=await toBitmap(blob);
+async function runJob(job){
+  const lecT=job.lecT;let cv=await toBitmap(job.blob);job.blob=null;
   let texts=[];
   if(native){try{texts=(await native.detect(cv)).map(r=>r.rawValue).filter(Boolean)}catch(e){}}
   if(!texts.length){
@@ -250,6 +277,7 @@ async function runJob({blob,lecT}){
     if(free){free.busy=true;try{texts=await workerScan(free,await createImageBitmap(cv))}catch(e){texts=await scanMany(cv,()=>document.createElement('canvas'),12000,true)}finally{free.busy=false}}
     else texts=await scanMany(cv,()=>document.createElement('canvas'),12000,true);
   }
+  cv.width=cv.height=0;cv=null;
   accept(texts,lecT);
 }
 const seenBad=new Set();
@@ -260,7 +288,7 @@ function accept(texts,lecT){
     else if(!seenBad.has(t)){seenBad.add(t);rejected[v.why]=(rejected[v.why]||0)+1}}
   if(neu.length){
     try{navigator.vibrate&&navigator.vibrate(30)}catch(e){}
-    const f=$('flash');f.classList.add('on');requestAnimationFrame(()=>requestAnimationFrame(()=>f.classList.remove('on')));
+    flash('g');
     const box=$('camNew');
     for(const n of neu){const d=document.createElement('div');d.textContent='✓ '+NAMES[n-1];box.prepend(d);setTimeout(()=>d.remove(),2300)}
     while(box.children.length>4)box.lastChild.remove();
@@ -268,10 +296,12 @@ function accept(texts,lecT){
   }
 }
 
+function flash(cls){const f=$('flash');f.className='on '+(cls||'');requestAnimationFrame(()=>requestAnimationFrame(()=>f.className=cls||''))}
 function render(){
   const left=shots-doneShots;
   $('nOk').textContent=present.size;$('nBad').textContent=NAMES.length-present.size;$('cOk').textContent=present.size;
   $('cAll').textContent=NAMES.length;
+  $('cQ').textContent=camMode==='photo'&&shots?('📸 '+shots+(left?' · ⏳ '+left:' ✓')):'';
   $('pending').textContent=left?('⏳ باقي '+left+' صورة تنقرا…'):(shots?('✓ انقرت '+shots+' صورة'):'');
   const r=Object.entries(rejected);$('rej').textContent=r.length?('مرفوض: '+r.map(([k,v])=>v+' '+k).join('، ')):'';
   const li=i=>'<li><span>'+(i+1)+'</span>'+NAMES[i]+'</li>';
@@ -281,10 +311,10 @@ function render(){
 }
 render();
 
-/* ---------- live camera: reads codes continuously, no button ---------- */
+/* ---------- camera: 📸 photo mode (one button, shot after shot) and ⚡ live mode ---------- */
 let stream=null,live=false;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const LIVEMAX=1280,LIVEMS=700,LIVEK=3;
+const LIVEMAX=1280;
 /* zoom: real lens zoom when the phone allows it, otherwise digital (crop the middle) */
 let zoom=1,dz=1,hw=null;
 const ZOOMS=[1,2,3];
@@ -295,43 +325,71 @@ async function setZoom(z){
   $('zoomB').textContent='🔍 '+z+'×';
 }
 $('zoomB').onclick=()=>setZoom(ZOOMS[(ZOOMS.indexOf(zoom)+1)%ZOOMS.length]);
-function grab(v){
-  const W=v.videoWidth,H=v.videoHeight,cw=W/dz,ch=H/dz,k=Math.min(1,LIVEMAX/Math.max(cw,ch));
+function grab(v,max){
+  const W=v.videoWidth,H=v.videoHeight,cw=W/dz,ch=H/dz,k=Math.min(1,(max||LIVEMAX)/Math.max(cw,ch));
   const cv=document.createElement('canvas');cv.width=Math.round(cw*k);cv.height=Math.round(ch*k);
   cv.getContext('2d',{willReadFrequently:true}).drawImage(v,(W-cw)/2,(H-ch)/2,cw,ch,0,0,cv.width,cv.height);return cv;
 }
-async function lane(slot){
-  const v=$('vid');let it=0;
+/* rectangles to try on one live frame: whole frame, the aim box, and two rotating tiles */
+function liveRects(W,H,it){
+  const sh=Math.min(W,H),r=[[0,0,W,H]],a=Math.round(sh*0.62);
+  r.push([Math.round((W-a)/2),Math.round((H-a)/2),a,a]);
+  for(const k of [2,3]){
+    const t=Math.round(sh/k),st=Math.round(t/2),xs=[],ys=[];
+    for(let q=0;q<=W-t;q+=st)xs.push(q);if(xs[xs.length-1]<W-t)xs.push(W-t);
+    for(let q=0;q<=H-t;q+=st)ys.push(q);if(ys[ys.length-1]<H-t)ys.push(H-t);
+    const n=xs.length*ys.length;
+    for(const j of [0,1]){const i=(it*2+j+(k===3?(n>>1):0))%n;r.push([xs[i%xs.length],ys[Math.floor(i/xs.length)],t,t])}
+  }
+  return r;
+}
+async function lane(slot,off){
+  const v=$('vid');let it=off;
   while(live){
-    if(!v.videoWidth||v.readyState<2){await sleep(150);continue}
+    if(!v.videoWidth||v.readyState<2){await sleep(100);continue}
     const lecT=Date.now();let texts=[];
     try{
-      if(native){texts=(await native.detect(dz>1?grab(v):v)).map(r=>r.rawValue).filter(Boolean);await sleep(60)}
-      else if(slot){texts=await workerScan(slot,await createImageBitmap(grab(v)),LIVEMS,(++it%4)?LIVEK:5)}
-      else{texts=await scanMany(grab(v),()=>document.createElement('canvas'),LIVEMS,true,(++it%4)?LIVEK:5)}
-    }catch(e){await sleep(200)}
-    if(live)accept(texts,lecT);
+      if(native){texts=(await native.detect(dz>1?grab(v):v)).map(r=>r.rawValue).filter(Boolean);await sleep(30)}
+      else{const cv=grab(v),rects=liveRects(cv.width,cv.height,it++);
+        if(slot)texts=await workerScan(slot,await createImageBitmap(cv),0,0,rects);
+        else{texts=scanRects(cv,()=>document.createElement('canvas'),rects);await sleep(10)}}
+    }catch(e){await sleep(150)}
+    if(live&&texts&&texts.length)accept(texts,lecT);
   }
 }
 async function startLive(){
   await Promise.all([nativeReady,workersReady]);
   if(!live)return;
-  if(native||!workers.length)lane(null);
-  else workers.forEach((w,i)=>setTimeout(()=>lane(w),i*200)); /* stagger so frames differ */
+  if(native||!workers.length)lane(null,0);
+  else workers.forEach((w,i)=>lane(w,i*7));
 }
-$('camGo').onclick=async()=>{
+async function openCam(m){
+  camMode=m;
   try{
-    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:2560},height:{ideal:1440}}});
-    const v=$('vid');v.srcObject=stream;$('camView').hidden=false;$('camHint').hidden=false;await v.play().catch(()=>{});wake(true);
+    const big=m==='photo';
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:big?3840:1920},height:{ideal:big?2160:1080}}});
+    const v=$('vid');v.srcObject=stream;
+    $('camView').className=m==='live'?'live':'';$('camView').hidden=false;
+    $('camHint').hidden=false;$('camHint').textContent=m==='live'?'وجّه المربع على الرموز':'صوّر، وصوّر اللي بعدها مباشرة';
+    await v.play().catch(()=>{});wake(true);
     const tr=stream.getVideoTracks()[0],cap=tr.getCapabilities?tr.getCapabilities():{};
     hw=cap.zoom?{tr,min:cap.zoom.min||1,max:cap.zoom.max||1}:null;setZoom(1);
-    live=true;startLive();
+    if(m==='live'){live=true;startLive()}
+    render();
   }catch(e){
     $('camMsg').hidden=false;$('snapAlt').hidden=false;
     $('camMsg').innerHTML='⚠️ الكاميرا المباشرة ممنوعة داخل هذي الصفحة.<br>افتح الرابط بـ <b>سفاري</b> أو <b>كروم</b> (مو داخل تطبيق Claude) وراح تشتغل.';
   }
+}
+$('camGo').onclick=()=>openCam('photo');
+$('liveGo').onclick=()=>openCam('live');
+/* 📸 one tap = one photo, kept only in memory, read in the background, then thrown away */
+$('shutter').onclick=()=>{
+  const v=$('vid');if(!v.videoWidth)return;
+  const lecT=Date.now(),cv=grab(v,MAXSIDE);flash();$('camHint').hidden=true;
+  cv.toBlob(b=>{cv.width=cv.height=0;if(b)addShot(b,lecT)},'image/jpeg',0.9);
 };
-$('camDone').onclick=()=>{live=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('camView').hidden=true;wake(false);render();window.scrollTo(0,0)};
+$('camDone').onclick=()=>{live=false;camMode='';if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('camView').hidden=true;wake(false);render();window.scrollTo(0,0)};
 
 $('snapIn').onchange=e=>{const f=e.target.files[0];e.target.value='';if(f)addShot(f,Date.now())};
 $('reset').onclick=()=>{present.clear();seenBad.clear();for(const k in rejected)delete rejected[k];queue=[];shots=running;doneShots=0;render()};

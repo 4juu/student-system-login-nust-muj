@@ -1,0 +1,14 @@
+name: graphify-wheels
+on: { push: { branches: [graphify-wheels] }, workflow_dispatch: {} }
+jobs:
+  dl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: |
+          mkdir wh
+          pip download graphifyy -d wh --only-binary=:all: --python-version 3.13 --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --platform manylinux_2_28_x86_64 --platform linux_x86_64 --implementation cp || pip download graphifyy -d wh
+          ls -la wh; du -sh wh
+      - uses: actions/upload-artifact@v4
+        with: { name: wheels, path: wh, retention-days: 3 }

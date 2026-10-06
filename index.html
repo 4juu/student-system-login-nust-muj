@@ -104,7 +104,7 @@ ol li span{font-family:var(--f-mono);color:var(--mute);min-width:2ch;font-varian
   <video id="vid" playsinline muted autoplay></video>
   <div id="flash"></div>
   <div id="aim"></div>
-  <div id="camTop"><span>حاضر <b id="cOk">0</b> / <span id="cAll"></span></span><span id="cQ"></span></div>
+  <div id="camTop"><span>حاضر <b id="cOk">0</b> / <span id="cAll"></span> <span id="eng"></span></span><span id="cQ"></span></div>
   <div id="camHint"></div>
   <div id="camNew"></div>
   <div id="camBot"><button id="zoomB" dir="ltr">🔍 1×</button><button id="shutter" aria-label="صوّر"></button><button id="camDone">إنهاء</button></div>
@@ -121,7 +121,7 @@ ol li span{font-family:var(--f-mono);color:var(--mute);min-width:2ch;font-varian
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" id="jsqrTag"></script>
 <script>
 const NAMES=["طالب 1", "طالب 2", "طالب 3", "طالب 4", "طالب 5", "طالب 6", "طالب 7", "طالب 8", "طالب 9", "طالب 10", "طالب 11", "طالب 12", "طالب 13", "طالب 14", "طالب 15", "طالب 16", "طالب 17", "طالب 18", "طالب 19", "طالب 20", "طالب 21", "طالب 22", "طالب 23", "طالب 24", "طالب 25", "طالب 26", "طالب 27", "طالب 28", "طالب 29", "طالب 30", "طالب 31", "طالب 32", "طالب 33", "طالب 34", "طالب 35", "طالب 36", "طالب 37", "طالب 38", "طالب 39", "طالب 40"];
-const SLOT=3000, TOL_S=30, SECRET='demo-secret-v1', MAXSIDE=2400;
+const SLOT=3000, TOL_S=30, SECRET='demo-secret-v1';let MAXSIDE=2400;
 const $=id=>document.getElementById(id);
 function fnv(s){let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0}return h>>>0}
 function tag(n,slot){return String(fnv(SECRET+'|'+n+'|'+slot)%1000000).padStart(6,'0')}
@@ -234,6 +234,56 @@ function workerScan(slot,bmp,ms,km,rects){
   return new Promise((res,rej)=>{const id=++wid;slot.w.onmessage=e=>{if(e.data.id!==id)return;e.data.err?rej(e.data.err):res(e.data.r)};slot.w.postMessage({id,bmp,ms,km,rects},[bmp])});
 }
 
+/* ---------- ZXing-C++ (WebAssembly): the strong, fast reader. jsQR stays only as a fallback ---------- */
+const ZX_URL='https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.4/dist/iife/reader/index.js';
+const ZX_PHOTO={formats:['QRCode'],tryHarder:true,tryRotate:true,tryInvert:false,tryDownscale:true,maxNumberOfSymbols:255};
+const ZX_LIVE={formats:['QRCode'],tryHarder:true,tryRotate:false,tryInvert:false,tryDownscale:true,maxNumberOfSymbols:255};
+let zx=[],zxQ=[],zxId=0,engine='';
+const zxReady=(async()=>{
+  try{
+    if(typeof Worker==='undefined')throw 0;
+    const src="importScripts('"+ZX_URL+"');"+
+      "onmessage=async e=>{const d=e.data;try{const r=await ZXingWASM.readBarcodes(new ImageData(new Uint8ClampedArray(d.buf),d.w,d.h),d.o);postMessage({id:d.id,r:r.filter(x=>x.isValid!==false&&x.text).map(x=>x.text)})}catch(err){postMessage({id:d.id,err:String(err)})}};"+
+      "ZXingWASM.readBarcodes(new ImageData(8,8),{formats:['QRCode']}).then(()=>postMessage({ready:1}),err=>postMessage({fail:String(err)}));";
+    const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
+    const n=Math.max(2,Math.min(4,(navigator.hardwareConcurrency||4)-1));
+    const made=await Promise.all(Array.from({length:n},()=>new Promise(res=>{
+      try{const w=new Worker(url);const to=setTimeout(()=>{w.terminate();res(null)},25000);
+        w.onmessage=e=>{if(e.data&&(e.data.ready||e.data.fail)){clearTimeout(to);if(e.data.ready)res(w);else{w.terminate();res(null)}}};
+        w.onerror=()=>{clearTimeout(to);res(null)}}catch(e){res(null)}})));
+    zx=made.filter(Boolean).map(w=>({w,busy:false,cb:null}));
+    zx.forEach(s=>s.w.onmessage=e=>{const cb=s.cb;s.cb=null;s.busy=false;if(cb)e.data.err?cb.rej(e.data.err):cb.res(e.data.r);zxPump()});
+  }catch(e){zx=[]}
+  if(!zx.length){
+    /* workers refused it: run the same library on the page itself, one read at a time */
+    try{
+      await new Promise((res,rej)=>{const sc=document.createElement('script');sc.src=ZX_URL;sc.onload=res;sc.onerror=rej;document.head.appendChild(sc);setTimeout(rej,25000)});
+      await ZXingWASM.readBarcodes(new ImageData(8,8),{formats:['QRCode']});
+      let chain=Promise.resolve();
+      const fake={busy:false,cb:null,w:{postMessage:(d)=>{chain=chain.then(async()=>{let m;try{const r=await ZXingWASM.readBarcodes(new ImageData(new Uint8ClampedArray(d.buf),d.w,d.h),d.o);m={r:r.filter(x=>x.isValid!==false&&x.text).map(x=>x.text)}}catch(err){m={err:String(err)}}
+        const cb=fake.cb;fake.cb=null;fake.busy=false;if(cb)m.err?cb.rej(m.err):cb.res(m.r);await new Promise(r=>setTimeout(r));zxPump()})}}};
+      zx=[fake];
+    }catch(e){zx=[]}
+  }
+  if(zx.length){engine='zxing';MAXSIDE=3840}
+})();
+function zxPump(){
+  for(const s of zx){if(!zxQ.length)return;if(s.busy)continue;
+    const j=zxQ.shift();s.busy=true;s.cb=j;s.w.postMessage({id:++zxId,buf:j.img.data.buffer,w:j.img.width,h:j.img.height,o:j.o},[j.img.data.buffer])}
+}
+function zxRead(img,o,front){return new Promise((res,rej)=>{const j={img,o,res,rej};front?zxQ.unshift(j):zxQ.push(j);zxPump()})}
+const zxIdle=()=>zx.some(s=>!s.busy)&&!zxQ.length;
+/* one photo: the whole picture once, plus overlapping half-size tiles at full detail for small/far codes */
+async function zxPhoto(cv){
+  const c=cv.getContext('2d',{willReadFrequently:true}),W=cv.width,H=cv.height,short=Math.min(W,H);
+  const rects=[[0,0,W,H]],s=Math.round(short/2),st=Math.round(s/2),xs=[],ys=[];
+  for(let q=0;q<=W-s;q+=st)xs.push(q);if(xs[xs.length-1]<W-s)xs.push(W-s);
+  for(let q=0;q<=H-s;q+=st)ys.push(q);if(ys[ys.length-1]<H-s)ys.push(H-s);
+  for(const y of ys)for(const x of xs)rects.push([x,y,s,s]);
+  const out=await Promise.all(rects.map(([x,y,w,h])=>zxRead(c.getImageData(x,y,w,h),ZX_PHOTO).catch(()=>[])));
+  return [...new Set(out.flat())];
+}
+
 async function toBitmap(blob){
   let b;
   try{b=await createImageBitmap(blob)}catch(e){
@@ -261,8 +311,8 @@ function validate(text,lecT){
 const present=new Set(),rejected={};let queue=[],running=0,shots=0,doneShots=0,camMode='';
 function addShot(blob,lecT){shots++;queue.push({blob,lecT});pump();render()}
 async function pump(){
-  await Promise.all([nativeReady,workersReady]);
-  const limit=mode==='workers'?workers.length:1;
+  await Promise.all([nativeReady,workersReady,zxReady]);
+  const limit=engine==='zxing'?2:mode==='workers'?workers.length:1;
   while(running<limit&&queue.length){
     const job=queue.shift();running++;
     runJob(job).then(()=>{job.blob=null}).catch(()=>{}).finally(()=>{running--;doneShots++;render();pump()});
@@ -271,11 +321,14 @@ async function pump(){
 async function runJob(job){
   const lecT=job.lecT;let cv=await toBitmap(job.blob);job.blob=null;
   let texts=[];
+  if(engine==='zxing'){texts=await zxPhoto(cv)}
+  else{
   if(native){try{texts=(await native.detect(cv)).map(r=>r.rawValue).filter(Boolean)}catch(e){}}
   if(!texts.length){
     const free=workers.find(s=>!s.busy);
     if(free){free.busy=true;try{texts=await workerScan(free,await createImageBitmap(cv))}catch(e){texts=await scanMany(cv,()=>document.createElement('canvas'),12000,true)}finally{free.busy=false}}
     else texts=await scanMany(cv,()=>document.createElement('canvas'),12000,true);
+  }
   }
   cv.width=cv.height=0;cv=null;
   accept(texts,lecT);
@@ -300,7 +353,7 @@ function flash(cls){const f=$('flash');f.className='on '+(cls||'');requestAnimat
 function render(){
   const left=shots-doneShots;
   $('nOk').textContent=present.size;$('nBad').textContent=NAMES.length-present.size;$('cOk').textContent=present.size;
-  $('cAll').textContent=NAMES.length;
+  $('cAll').textContent=NAMES.length;$('eng').textContent=engine==='zxing'?'⚡':'';
   $('cQ').textContent=camMode==='photo'&&shots?('📸 '+shots+(left?' · ⏳ '+left:' ✓')):'';
   $('pending').textContent=left?('⏳ باقي '+left+' صورة تنقرا…'):(shots?('✓ انقرت '+shots+' صورة'):'');
   const r=Object.entries(rejected);$('rej').textContent=r.length?('مرفوض: '+r.map(([k,v])=>v+' '+k).join('، ')):'';
@@ -309,7 +362,7 @@ function render(){
   $('absent').innerHTML=idx.filter(i=>!present.has(i+1)).map(li).join('')||'<li>ماكو غياب</li>';
   $('present').innerHTML=idx.filter(i=>present.has(i+1)).map(li).join('')||'<li>بعد ماكو أحد</li>';
 }
-render();
+render();zxReady.then(render);
 
 /* ---------- camera: 📸 photo mode (one button, shot after shot) and ⚡ live mode ---------- */
 let stream=null,live=false;
@@ -349,7 +402,8 @@ async function lane(slot,off){
     if(!v.videoWidth||v.readyState<2){await sleep(100);continue}
     const lecT=Date.now();let texts=[];
     try{
-      if(native){texts=(await native.detect(dz>1?grab(v):v)).map(r=>r.rawValue).filter(Boolean);await sleep(30)}
+      if(engine==='zxing'){const cv=grab(v,1920);texts=await zxRead(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height),ZX_LIVE,true)}
+      else if(native){texts=(await native.detect(dz>1?grab(v):v)).map(r=>r.rawValue).filter(Boolean);await sleep(30)}
       else{const cv=grab(v),rects=liveRects(cv.width,cv.height,it++);
         if(slot)texts=await workerScan(slot,await createImageBitmap(cv),0,0,rects);
         else{texts=scanRects(cv,()=>document.createElement('canvas'),rects);await sleep(10)}}
@@ -358,8 +412,11 @@ async function lane(slot,off){
   }
 }
 async function startLive(){
-  await Promise.all([nativeReady,workersReady]);
+  if(!engine)$('camHint').textContent='⏳ لحظة، دا يحمّل القارئ…';
+  await Promise.all([nativeReady,workersReady,zxReady]);
   if(!live)return;
+  $('camHint').textContent='وجّه الكاميرا على الرموز';
+  if(engine==='zxing'){zx.forEach((w,i)=>setTimeout(()=>lane(null,i),i*40));return}
   if(native||!workers.length)lane(null,0);
   else workers.forEach((w,i)=>lane(w,i*7));
 }

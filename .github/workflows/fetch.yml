@@ -1,0 +1,20 @@
+name: fetch-zxing
+on: { push: { branches: [zxing-dist] }, workflow_dispatch: {} }
+permissions: { contents: write }
+jobs:
+  get:
+    if: "!contains(github.event.head_commit.message, '[built]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          npm pack zxing-wasm@2.2.4
+          tar xzf zxing-wasm-2.2.4.tgz
+          mkdir -p zx
+          cp package/dist/iife/reader/index.js zx/zxing-reader.js
+          find package/dist -name "zxing_reader.wasm" | head -3
+          cp "$(find package/dist -name zxing_reader.wasm | head -1)" zx/zxing_reader.wasm
+          ls -la zx
+          rm -rf package *.tgz
+          git config user.name github-actions; git config user.email actions@github.com
+          git add zx && git commit -m "zxing files [built]" && git push

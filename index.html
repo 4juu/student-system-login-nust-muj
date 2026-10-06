@@ -50,6 +50,9 @@ ol li span{font-family:var(--f-mono);color:var(--mute);min-width:2ch;font-varian
 #camTop{position:absolute;top:0;inset-inline:0;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(#000a,#0000);font-size:17px}
 #camTop b{font-family:var(--f-mono);font-size:22px}
 #camBot{position:absolute;bottom:0;inset-inline:0;padding:20px 16px 34px;display:flex;justify-content:center;align-items:center;background:linear-gradient(#0000,#000a)}
+#zoomB{font:inherit;font-weight:700;font-size:18px;background:#fff3;color:#fff;border:2px solid #fff;border-radius:14px;padding:12px 18px;min-width:76px}
+#camBot{gap:14px}
+#camView video{transform-origin:50% 50%;transition:transform .2s}
 #camDone{font:inherit;font-weight:700;font-size:19px;background:var(--accent);color:var(--accent-fg);border:0;border-radius:14px;padding:14px 40px}
 #camHint{position:absolute;top:50%;inset-inline:0;text-align:center;font-size:16px;opacity:.75;transform:translateY(-50%);pointer-events:none}
 #camNew{position:absolute;bottom:110px;inset-inline:12px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
@@ -96,7 +99,7 @@ ol li span{font-family:var(--f-mono);color:var(--mute);min-width:2ch;font-varian
   <div id="camTop"><span>حاضر <b id="cOk">0</b> / <span id="cAll"></span></span><span id="cQ"><i class="dot"></i>يقرا</span></div>
   <div id="camHint">وجّه الكاميرا على رموز الطلاب</div>
   <div id="camNew"></div>
-  <div id="camBot"><button id="camDone">إنهاء</button></div>
+  <div id="camBot"><button id="zoomB" dir="ltr">🔍 1×</button><button id="camDone">إنهاء</button></div>
 </div>
 
 <div id="stuScreen" hidden>
@@ -151,16 +154,18 @@ $('gridGo').onclick=()=>{
 /* ---------- decoding ---------- */
 /* Scan a canvas for many QR codes: overlapping windows at several sizes, jsQR on each,
    whiting out each code found so the next try finds another. Runs in workers or on the page. */
-async function scanMany(cv,mk,budget,yieldRows){
+async function scanMany(cv,mk,budget,yieldRows,kmax){
   const found=[],seenT=new Set();
   const c=cv.getContext('2d',{willReadFrequently:true}),W=cv.width,H=cv.height,short=Math.min(W,H);
   const tmp=mk(),tc=tmp.getContext('2d',{willReadFrequently:true});
   const t0=Date.now();
-  for(let k=1;k<=7;k++){
+  for(let k=1;k<=(kmax||7);k++){
     const s=Math.round(short/k),step=Math.max(1,Math.round(s/2)),sc=Math.min(1,450/s),ts=Math.round(s*sc);
     tmp.width=ts;tmp.height=ts;
-    for(let y=0;y<=Math.max(0,H-s);y+=step){
-      for(let x=0;x<=Math.max(0,W-s);x+=step){
+    const pos=(L)=>{const o=[];for(let q=0;q<=Math.max(0,L-s);q+=step)o.push(q);if(L>s&&o[o.length-1]<L-s)o.push(L-s);return o};
+    const xs=pos(W),ys=pos(H);
+    for(const y of ys){
+      for(const x of xs){
         if(Date.now()-t0>budget)return found;
         for(let tries=0;tries<4;tries++){
           tc.drawImage(cv,x,y,s,s,0,0,ts,ts);
@@ -186,8 +191,8 @@ const workersReady=(async()=>{
     if(typeof OffscreenCanvas==='undefined'||typeof Worker==='undefined')return;
     const lib=await (await fetch($('jsqrTag').src)).text();
     const src=lib+'\n'+scanMany.toString()+'\n'+
-      'onmessage=async e=>{const {id,bmp,ms}=e.data;try{const cv=new OffscreenCanvas(bmp.width,bmp.height);cv.getContext("2d",{willReadFrequently:true}).drawImage(bmp,0,0);bmp.close&&bmp.close();'+
-      'const r=await scanMany(cv,()=>new OffscreenCanvas(1,1),ms||12000,false);postMessage({id,r})}catch(err){postMessage({id,err:String(err)})}};postMessage({ready:1})';
+      'onmessage=async e=>{const {id,bmp,ms,km}=e.data;try{const cv=new OffscreenCanvas(bmp.width,bmp.height);cv.getContext("2d",{willReadFrequently:true}).drawImage(bmp,0,0);bmp.close&&bmp.close();'+
+      'const r=await scanMany(cv,()=>new OffscreenCanvas(1,1),ms||12000,false,km);postMessage({id,r})}catch(err){postMessage({id,err:String(err)})}};postMessage({ready:1})';
     const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
     const n=Math.max(1,Math.min(3,(navigator.hardwareConcurrency||2)-1));
     const made=await Promise.all(Array.from({length:n},()=>new Promise(res=>{
@@ -198,8 +203,8 @@ const workersReady=(async()=>{
   }catch(e){workers=[]}
 })();
 let wid=0;
-function workerScan(slot,bmp,ms){
-  return new Promise((res,rej)=>{const id=++wid;slot.w.onmessage=e=>{if(e.data.id!==id)return;e.data.err?rej(e.data.err):res(e.data.r)};slot.w.postMessage({id,bmp,ms},[bmp])});
+function workerScan(slot,bmp,ms,km){
+  return new Promise((res,rej)=>{const id=++wid;slot.w.onmessage=e=>{if(e.data.id!==id)return;e.data.err?rej(e.data.err):res(e.data.r)};slot.w.postMessage({id,bmp,ms,km},[bmp])});
 }
 
 async function toBitmap(blob){
@@ -279,21 +284,31 @@ render();
 /* ---------- live camera: reads codes continuously, no button ---------- */
 let stream=null,live=false;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const LIVEMAX=1920,LIVEMS=2500;
+const LIVEMAX=1280,LIVEMS=700,LIVEK=3;
+/* zoom: real lens zoom when the phone allows it, otherwise digital (crop the middle) */
+let zoom=1,dz=1,hw=null;
+const ZOOMS=[1,2,3];
+async function setZoom(z){
+  zoom=z;dz=z;const v=$('vid');
+  if(hw){const hz=Math.max(hw.min,Math.min(hw.max,z));try{await hw.tr.applyConstraints({advanced:[{zoom:hz}]});dz=z/hz}catch(e){}}
+  v.style.transform=dz>1?'scale('+dz+')':'';
+  $('zoomB').textContent='🔍 '+z+'×';
+}
+$('zoomB').onclick=()=>setZoom(ZOOMS[(ZOOMS.indexOf(zoom)+1)%ZOOMS.length]);
 function grab(v){
-  const W=v.videoWidth,H=v.videoHeight,k=Math.min(1,LIVEMAX/Math.max(W,H));
-  const cv=document.createElement('canvas');cv.width=Math.round(W*k);cv.height=Math.round(H*k);
-  cv.getContext('2d',{willReadFrequently:true}).drawImage(v,0,0,cv.width,cv.height);return cv;
+  const W=v.videoWidth,H=v.videoHeight,cw=W/dz,ch=H/dz,k=Math.min(1,LIVEMAX/Math.max(cw,ch));
+  const cv=document.createElement('canvas');cv.width=Math.round(cw*k);cv.height=Math.round(ch*k);
+  cv.getContext('2d',{willReadFrequently:true}).drawImage(v,(W-cw)/2,(H-ch)/2,cw,ch,0,0,cv.width,cv.height);return cv;
 }
 async function lane(slot){
-  const v=$('vid');
+  const v=$('vid');let it=0;
   while(live){
     if(!v.videoWidth||v.readyState<2){await sleep(150);continue}
     const lecT=Date.now();let texts=[];
     try{
-      if(native){texts=(await native.detect(v)).map(r=>r.rawValue).filter(Boolean);await sleep(120)}
-      else if(slot){texts=await workerScan(slot,await createImageBitmap(grab(v)),LIVEMS)}
-      else{texts=await scanMany(grab(v),()=>document.createElement('canvas'),1500,true);await sleep(30)}
+      if(native){texts=(await native.detect(dz>1?grab(v):v)).map(r=>r.rawValue).filter(Boolean);await sleep(60)}
+      else if(slot){texts=await workerScan(slot,await createImageBitmap(grab(v)),LIVEMS,(++it%4)?LIVEK:5)}
+      else{texts=await scanMany(grab(v),()=>document.createElement('canvas'),LIVEMS,true,(++it%4)?LIVEK:5)}
     }catch(e){await sleep(200)}
     if(live)accept(texts,lecT);
   }
@@ -302,12 +317,14 @@ async function startLive(){
   await Promise.all([nativeReady,workersReady]);
   if(!live)return;
   if(native||!workers.length)lane(null);
-  else workers.forEach((w,i)=>setTimeout(()=>lane(w),i*500)); /* stagger so frames differ */
+  else workers.forEach((w,i)=>setTimeout(()=>lane(w),i*200)); /* stagger so frames differ */
 }
 $('camGo').onclick=async()=>{
   try{
     stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:2560},height:{ideal:1440}}});
     const v=$('vid');v.srcObject=stream;$('camView').hidden=false;$('camHint').hidden=false;await v.play().catch(()=>{});wake(true);
+    const tr=stream.getVideoTracks()[0],cap=tr.getCapabilities?tr.getCapabilities():{};
+    hw=cap.zoom?{tr,min:cap.zoom.min||1,max:cap.zoom.max||1}:null;setZoom(1);
     live=true;startLive();
   }catch(e){
     $('camMsg').hidden=false;$('snapAlt').hidden=false;

@@ -1,0 +1,322 @@
+<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"></head><body><title>تجربة المسح الجماعي</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+:root{
+  --bg:#f3f5f4;--card:#fff;--fg:#17201d;--mute:#5d6b66;--line:#d9e0dd;
+  --accent:#0f6b55;--accent-fg:#fff;--ok:#1d7a3e;--ok-bg:#e3f3e8;--bad:#b3261e;--bad-bg:#fbe7e5;
+  --f-body:"IBM Plex Sans Arabic",system-ui,sans-serif;--f-mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111614;--card:#1a211e;--fg:#e6ece9;--mute:#9aa8a2;--line:#2c3631;--accent:#3fbf98;--accent-fg:#06221a;--ok:#5fd18a;--ok-bg:#16301f;--bad:#ff8a80;--bad-bg:#3a1a17;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#111614;--card:#1a211e;--fg:#e6ece9;--mute:#9aa8a2;--line:#2c3631;--accent:#3fbf98;--accent-fg:#06221a;--ok:#5fd18a;--ok-bg:#16301f;--bad:#ff8a80;--bad-bg:#3a1a17;color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.6;direction:rtl}
+.wrap{max-width:480px;margin-inline:auto;padding:24px 16px 48px;display:flex;flex-direction:column;gap:14px}
+h1{font-size:22px;margin:0;text-align:center}
+h2{font-size:16px;margin:8px 0 0}
+.mute{color:var(--mute);font-size:14px;margin:0;text-align:center}
+.btn{font:inherit;font-weight:500;font-size:18px;padding:16px;border-radius:14px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer;text-align:center;display:block;width:100%}
+.btn.p{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.big{font-size:22px;padding:26px 16px}
+.link{font:inherit;font-size:14px;background:none;border:0;color:var(--mute);text-decoration:underline;cursor:pointer;padding:8px}
+.btn:focus-visible,select:focus-visible,.link:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+select{font:inherit;font-size:18px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--fg);width:100%}
+.back{align-self:flex-start}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{border-radius:14px;padding:14px;text-align:center}
+.stat b{display:block;font-family:var(--f-mono);font-size:44px;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat.ok{background:var(--ok-bg);color:var(--ok)}
+.stat.bad{background:var(--bad-bg);color:var(--bad)}
+ol{margin:0;padding:0;list-style:none;background:var(--card);border:1px solid var(--line);border-radius:14px}
+ol li{padding:9px 14px;border-top:1px solid var(--line);display:flex;gap:10px}
+ol li:first-child{border-top:0}
+ol li span{font-family:var(--f-mono);color:var(--mute);min-width:2ch;font-variant-numeric:tabular-nums}
+#absent li{color:var(--bad)}
+#pending{color:var(--accent);font-weight:500}
+
+/* student screens */
+#stuScreen,#grid{position:fixed;inset:0;background:#fff;color:#000;z-index:10}
+#stuScreen{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:12px}
+#stuScreen canvas{width:min(94vw,78vh);height:auto;image-rendering:pixelated}
+#stuScreen .num{font-size:20px;text-align:center}
+#grid{display:grid;gap:3vw;padding:4vw;align-content:start;overflow:auto}
+#grid canvas{width:100%;height:auto;image-rendering:pixelated}
+.x{position:fixed;top:10px;inset-inline-start:10px;font:inherit;font-size:15px;background:#eee;color:#000;border:0;border-radius:10px;padding:8px 14px;z-index:11}
+
+/* live camera */
+#camView{position:fixed;inset:0;background:#000;z-index:20;color:#fff}
+#camView video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#camTop{position:absolute;top:0;inset-inline:0;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(#000a,#0000);font-size:17px}
+#camTop b{font-family:var(--f-mono);font-size:22px}
+#camBot{position:absolute;bottom:0;inset-inline:0;padding:20px 16px 34px;display:flex;justify-content:center;align-items:center;background:linear-gradient(#0000,#000a)}
+#camDone{font:inherit;font-weight:700;font-size:19px;background:var(--accent);color:var(--accent-fg);border:0;border-radius:14px;padding:14px 40px}
+#camHint{position:absolute;top:50%;inset-inline:0;text-align:center;font-size:16px;opacity:.75;transform:translateY(-50%);pointer-events:none}
+#camNew{position:absolute;bottom:110px;inset-inline:12px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+#camNew div{background:#1a7f37e6;color:#fff;border-radius:10px;padding:6px 12px;font-size:16px;animation:pop 2.2s forwards}
+@keyframes pop{0%{opacity:0;transform:translateY(8px)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0}}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2ecc71;margin-inline-end:6px;animation:bl 1s infinite}
+@keyframes bl{50%{opacity:.25}}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+#flash{background:#2ecc71}
+#flash.on{opacity:.35;transition:none}
+</style>
+
+<div class="wrap" id="home">
+  <h1>تجربة المسح الجماعي</h1>
+  <p class="mute">الطلاب يرفعون تليفوناتهم، والتدريسي يصوّرهم</p>
+  <button class="btn p big" data-go="stu">أنا طالب</button>
+  <button class="btn big" data-go="lec">أنا تدريسي</button>
+</div>
+
+<div class="wrap" id="stu" hidden>
+  <button class="link back" data-go="home">→ رجوع</button>
+  <h1>اختار اسمك</h1>
+  <select id="stuN"></select>
+  <button class="btn p big" id="stuGo">اعرض رمزي</button>
+  <button class="link" id="gridGo">اعرض 12 رمز على شاشة وحدة (للتجربة)</button>
+</div>
+
+<div class="wrap" id="lec" hidden>
+  <button class="link back" data-go="home">→ رجوع</button>
+  <button class="btn p big" id="camGo">📷 افتح الكاميرا</button>
+  <p class="mute" id="camMsg" hidden></p>
+  <label class="btn" id="snapAlt" hidden>📷 صوّر صورة<input id="snapIn" type="file" accept="image/*" capture="environment" hidden></label>
+  <p class="mute" id="pending"></p>
+  <div class="stats"><div class="stat ok"><b id="nOk">0</b>حاضر</div><div class="stat bad"><b id="nBad">0</b>غائب</div></div>
+  <p class="mute" id="rej"></p>
+  <h2>الغائبون</h2><ol id="absent"></ol>
+  <h2>الحاضرون</h2><ol id="present"></ol>
+  <button class="link" id="reset">تصفير</button>
+</div>
+
+<div id="camView" hidden>
+  <video id="vid" playsinline muted autoplay></video>
+  <div id="flash"></div>
+  <div id="camTop"><span>حاضر <b id="cOk">0</b> / <span id="cAll"></span></span><span id="cQ"><i class="dot"></i>يقرا</span></div>
+  <div id="camHint">وجّه الكاميرا على رموز الطلاب</div>
+  <div id="camNew"></div>
+  <div id="camBot"><button id="camDone">إنهاء</button></div>
+</div>
+
+<div id="stuScreen" hidden>
+  <button class="x" id="stuX">رجوع</button>
+  <canvas id="stuC"></canvas>
+  <div class="num" id="stuLbl"></div>
+</div>
+<div id="grid" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" id="jsqrTag"></script>
+<script>
+const NAMES=["طالب 1", "طالب 2", "طالب 3", "طالب 4", "طالب 5", "طالب 6", "طالب 7", "طالب 8", "طالب 9", "طالب 10", "طالب 11", "طالب 12", "طالب 13", "طالب 14", "طالب 15", "طالب 16", "طالب 17", "طالب 18", "طالب 19", "طالب 20", "طالب 21", "طالب 22", "طالب 23", "طالب 24", "طالب 25", "طالب 26", "طالب 27", "طالب 28", "طالب 29", "طالب 30", "طالب 31", "طالب 32", "طالب 33", "طالب 34", "طالب 35", "طالب 36", "طالب 37", "طالب 38", "طالب 39", "طالب 40"];
+const SLOT=3000, TOL_S=30, SECRET='demo-secret-v1', MAXSIDE=2400;
+const $=id=>document.getElementById(id);
+function fnv(s){let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0}return h>>>0}
+function tag(n,slot){return String(fnv(SECRET+'|'+n+'|'+slot)%1000000).padStart(6,'0')}
+function token(n,t){const s=Math.floor(t/SLOT);return n+'.'+(s%10000)+'.'+tag(n,s)}
+
+function drawQR(cv,text,scale){
+  const q=qrcode(0,'M');q.addData(text,'Alphanumeric');q.make();
+  const m=q.getModuleCount(),qz=4,size=(m+qz*2)*scale;
+  cv.width=size;cv.height=size;const c=cv.getContext('2d');
+  c.fillStyle='#fff';c.fillRect(0,0,size,size);c.fillStyle='#000';
+  for(let y=0;y<m;y++)for(let x=0;x<m;x++)if(q.isDark(y,x))c.fillRect((x+qz)*scale,(y+qz)*scale,scale,scale);
+}
+
+/* ---------- screens ---------- */
+function show(id){for(const s of ['home','stu','lec'])$(s).hidden=s!==id}
+document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>show(b.dataset.go));
+$('stuN').innerHTML=NAMES.map((n,i)=>'<option value="'+(i+1)+'">'+n+'</option>').join('');
+try{const v=localStorage.getItem('scan_me');if(v)$('stuN').value=v}catch(e){}
+$('stuN').onchange=()=>{try{localStorage.setItem('scan_me',$('stuN').value)}catch(e){}};
+
+let lock=null;async function wake(on){try{if(on&&navigator.wakeLock)lock=await navigator.wakeLock.request('screen');else if(lock){await lock.release();lock=null}}catch(e){}}
+
+let stuTimer=null;
+function stuTick(){const n=+$('stuN').value||1,t=Date.now();drawQR($('stuC'),token(n,t),12);$('stuLbl').textContent=NAMES[n-1]||n;stuTimer=setTimeout(stuTick,SLOT-(t%SLOT)+5)}
+$('stuGo').onclick=()=>{$('stuScreen').hidden=false;stuTick();wake(true)};
+$('stuX').onclick=()=>{clearTimeout(stuTimer);$('stuScreen').hidden=true;wake(false)};
+
+let gridTimer=null;
+function gridTick(){const t=Date.now();$('grid').querySelectorAll('canvas').forEach((cv,i)=>drawQR(cv,token(i+1,t),8));gridTimer=setTimeout(gridTick,SLOT-(t%SLOT)+5)}
+$('gridGo').onclick=()=>{
+  const g=$('grid'),cols=innerWidth>innerHeight?6:3;g.innerHTML='<button class="x" id="gX">رجوع</button>';
+  g.style.gridTemplateColumns='repeat('+cols+',1fr)';
+  for(let i=0;i<12;i++)g.appendChild(document.createElement('canvas'));
+  g.hidden=false;gridTick();wake(true);
+  $('gX').onclick=()=>{clearTimeout(gridTimer);g.hidden=true;wake(false)};
+};
+
+/* ---------- decoding ---------- */
+/* Scan a canvas for many QR codes: overlapping windows at several sizes, jsQR on each,
+   whiting out each code found so the next try finds another. Runs in workers or on the page. */
+async function scanMany(cv,mk,budget,yieldRows){
+  const found=[],seenT=new Set();
+  const c=cv.getContext('2d',{willReadFrequently:true}),W=cv.width,H=cv.height,short=Math.min(W,H);
+  const tmp=mk(),tc=tmp.getContext('2d',{willReadFrequently:true});
+  const t0=Date.now();
+  for(let k=1;k<=7;k++){
+    const s=Math.round(short/k),step=Math.max(1,Math.round(s/2)),sc=Math.min(1,450/s),ts=Math.round(s*sc);
+    tmp.width=ts;tmp.height=ts;
+    for(let y=0;y<=Math.max(0,H-s);y+=step){
+      for(let x=0;x<=Math.max(0,W-s);x+=step){
+        if(Date.now()-t0>budget)return found;
+        for(let tries=0;tries<4;tries++){
+          tc.drawImage(cv,x,y,s,s,0,0,ts,ts);
+          const r=jsQR(tc.getImageData(0,0,ts,ts).data,ts,ts,{inversionAttempts:'dontInvert'});
+          if(!r||!r.data)break;
+          const L=r.location,pts=[L.topLeftCorner,L.topRightCorner,L.bottomRightCorner,L.bottomLeftCorner].map(p=>({x:x+p.x/sc,y:y+p.y/sc}));
+          if(!seenT.has(r.data)){seenT.add(r.data);found.push(r.data)}
+          const cx=pts.reduce((a,p)=>a+p.x,0)/4,cy=pts.reduce((a,p)=>a+p.y,0)/4;
+          c.fillStyle='#fff';c.beginPath();pts.forEach((p,i)=>{const px=cx+(p.x-cx)*1.4,py=cy+(p.y-cy)*1.4;i?c.lineTo(px,py):c.moveTo(px,py)});c.closePath();c.fill();
+        }
+      }
+      if(yieldRows)await new Promise(r=>setTimeout(r));
+    }
+  }
+  return found;
+}
+
+let native=null,workers=[],mode='page';
+const nativeReady=(async()=>{if('BarcodeDetector' in window){try{const f=await BarcodeDetector.getSupportedFormats();if(f.includes('qr_code'))native=new BarcodeDetector({formats:['qr_code']})}catch(e){}}})();
+/* try to build a small pool of background workers so photos are read in parallel without freezing the camera */
+const workersReady=(async()=>{
+  try{
+    if(typeof OffscreenCanvas==='undefined'||typeof Worker==='undefined')return;
+    const lib=await (await fetch($('jsqrTag').src)).text();
+    const src=lib+'\n'+scanMany.toString()+'\n'+
+      'onmessage=async e=>{const {id,bmp,ms}=e.data;try{const cv=new OffscreenCanvas(bmp.width,bmp.height);cv.getContext("2d",{willReadFrequently:true}).drawImage(bmp,0,0);bmp.close&&bmp.close();'+
+      'const r=await scanMany(cv,()=>new OffscreenCanvas(1,1),ms||12000,false);postMessage({id,r})}catch(err){postMessage({id,err:String(err)})}};postMessage({ready:1})';
+    const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
+    const n=Math.max(1,Math.min(3,(navigator.hardwareConcurrency||2)-1));
+    const made=await Promise.all(Array.from({length:n},()=>new Promise(res=>{
+      try{const w=new Worker(url);const to=setTimeout(()=>{w.terminate();res(null)},4000);
+        w.onmessage=e=>{if(e.data&&e.data.ready){clearTimeout(to);w.onmessage=null;res(w)}};w.onerror=()=>{clearTimeout(to);res(null)}}catch(e){res(null)}})));
+    workers=made.filter(Boolean).map(w=>({w,busy:false}));
+    if(workers.length)mode='workers';
+  }catch(e){workers=[]}
+})();
+let wid=0;
+function workerScan(slot,bmp,ms){
+  return new Promise((res,rej)=>{const id=++wid;slot.w.onmessage=e=>{if(e.data.id!==id)return;e.data.err?rej(e.data.err):res(e.data.r)};slot.w.postMessage({id,bmp,ms},[bmp])});
+}
+
+async function toBitmap(blob){
+  let b;
+  try{b=await createImageBitmap(blob)}catch(e){
+    b=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=URL.createObjectURL(blob)});
+  }
+  const W=b.width||b.naturalWidth,H=b.height||b.naturalHeight,k=Math.min(1,MAXSIDE/Math.max(W,H));
+  const cv=document.createElement('canvas');cv.width=Math.round(W*k);cv.height=Math.round(H*k);
+  cv.getContext('2d',{willReadFrequently:true}).drawImage(b,0,0,cv.width,cv.height);
+  b.close&&b.close();
+  return cv;
+}
+
+function validate(text,lecT){
+  const m=/^(\d{1,3})\.(\d{1,4})\.(\d{6})$/.exec(text);
+  if(!m)return{ok:false,why:'غريب'};
+  const n=+m[1],mod=+m[2],tg=m[3],ls=Math.floor(lecT/SLOT);
+  if(n<1||n>NAMES.length)return{ok:false,why:'غريب'};
+  let s=ls-((ls-mod)%10000+10000)%10000;if(ls-s>5000)s+=10000;
+  if(tag(n,s)!==tg)return{ok:false,n,why:'مزوّر'};
+  if(Math.abs(ls-s)>Math.ceil(TOL_S*1000/SLOT))return{ok:false,n,why:ls>s?'قديم':'ساعة خطأ'};
+  return{ok:true,n};
+}
+
+/* ---------- background queue ---------- */
+const present=new Set(),rejected={};let queue=[],running=0,shots=0,doneShots=0;
+function addShot(blob,lecT){shots++;queue.push({blob,lecT});pump();render()}
+async function pump(){
+  await Promise.all([nativeReady,workersReady]);
+  const limit=mode==='workers'?workers.length:1;
+  while(running<limit&&queue.length){
+    const job=queue.shift();running++;
+    runJob(job).catch(()=>{}).finally(()=>{running--;doneShots++;render();pump()});
+  }
+}
+async function runJob({blob,lecT}){
+  const cv=await toBitmap(blob);
+  let texts=[];
+  if(native){try{texts=(await native.detect(cv)).map(r=>r.rawValue).filter(Boolean)}catch(e){}}
+  if(!texts.length){
+    const free=workers.find(s=>!s.busy);
+    if(free){free.busy=true;try{texts=await workerScan(free,await createImageBitmap(cv))}catch(e){texts=await scanMany(cv,()=>document.createElement('canvas'),12000,true)}finally{free.busy=false}}
+    else texts=await scanMany(cv,()=>document.createElement('canvas'),12000,true);
+  }
+  accept(texts,lecT);
+}
+const seenBad=new Set();
+function accept(texts,lecT){
+  const neu=[];
+  for(const t of texts){const v=validate(t,lecT);
+    if(v.ok){if(!present.has(v.n)){present.add(v.n);neu.push(v.n)}}
+    else if(!seenBad.has(t)){seenBad.add(t);rejected[v.why]=(rejected[v.why]||0)+1}}
+  if(neu.length){
+    try{navigator.vibrate&&navigator.vibrate(30)}catch(e){}
+    const f=$('flash');f.classList.add('on');requestAnimationFrame(()=>requestAnimationFrame(()=>f.classList.remove('on')));
+    const box=$('camNew');
+    for(const n of neu){const d=document.createElement('div');d.textContent='✓ '+NAMES[n-1];box.prepend(d);setTimeout(()=>d.remove(),2300)}
+    while(box.children.length>4)box.lastChild.remove();
+    $('camHint').hidden=true;render();
+  }
+}
+
+function render(){
+  const left=shots-doneShots;
+  $('nOk').textContent=present.size;$('nBad').textContent=NAMES.length-present.size;$('cOk').textContent=present.size;
+  $('cAll').textContent=NAMES.length;
+  $('pending').textContent=left?('⏳ باقي '+left+' صورة تنقرا…'):(shots?('✓ انقرت '+shots+' صورة'):'');
+  const r=Object.entries(rejected);$('rej').textContent=r.length?('مرفوض: '+r.map(([k,v])=>v+' '+k).join('، ')):'';
+  const li=i=>'<li><span>'+(i+1)+'</span>'+NAMES[i]+'</li>';
+  const idx=NAMES.map((_,i)=>i);
+  $('absent').innerHTML=idx.filter(i=>!present.has(i+1)).map(li).join('')||'<li>ماكو غياب</li>';
+  $('present').innerHTML=idx.filter(i=>present.has(i+1)).map(li).join('')||'<li>بعد ماكو أحد</li>';
+}
+render();
+
+/* ---------- live camera: reads codes continuously, no button ---------- */
+let stream=null,live=false;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const LIVEMAX=1920,LIVEMS=2500;
+function grab(v){
+  const W=v.videoWidth,H=v.videoHeight,k=Math.min(1,LIVEMAX/Math.max(W,H));
+  const cv=document.createElement('canvas');cv.width=Math.round(W*k);cv.height=Math.round(H*k);
+  cv.getContext('2d',{willReadFrequently:true}).drawImage(v,0,0,cv.width,cv.height);return cv;
+}
+async function lane(slot){
+  const v=$('vid');
+  while(live){
+    if(!v.videoWidth||v.readyState<2){await sleep(150);continue}
+    const lecT=Date.now();let texts=[];
+    try{
+      if(native){texts=(await native.detect(v)).map(r=>r.rawValue).filter(Boolean);await sleep(120)}
+      else if(slot){texts=await workerScan(slot,await createImageBitmap(grab(v)),LIVEMS)}
+      else{texts=await scanMany(grab(v),()=>document.createElement('canvas'),1500,true);await sleep(30)}
+    }catch(e){await sleep(200)}
+    if(live)accept(texts,lecT);
+  }
+}
+async function startLive(){
+  await Promise.all([nativeReady,workersReady]);
+  if(!live)return;
+  if(native||!workers.length)lane(null);
+  else workers.forEach((w,i)=>setTimeout(()=>lane(w),i*500)); /* stagger so frames differ */
+}
+$('camGo').onclick=async()=>{
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:2560},height:{ideal:1440}}});
+    const v=$('vid');v.srcObject=stream;$('camView').hidden=false;$('camHint').hidden=false;await v.play().catch(()=>{});wake(true);
+    live=true;startLive();
+  }catch(e){
+    $('camMsg').hidden=false;$('snapAlt').hidden=false;
+    $('camMsg').innerHTML='⚠️ الكاميرا المباشرة ممنوعة داخل هذي الصفحة.<br>افتح الرابط بـ <b>سفاري</b> أو <b>كروم</b> (مو داخل تطبيق Claude) وراح تشتغل.';
+  }
+};
+$('camDone').onclick=()=>{live=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('camView').hidden=true;wake(false);render();window.scrollTo(0,0)};
+
+$('snapIn').onchange=e=>{const f=e.target.files[0];e.target.value='';if(f)addShot(f,Date.now())};
+$('reset').onclick=()=>{present.clear();seenBad.clear();for(const k in rejected)delete rejected[k];queue=[];shots=running;doneShots=0;render()};
+</script>
+</body></html>
